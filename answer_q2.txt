@@ -1,0 +1,12 @@
+I had two tryouts before succes. the first was taking small patch 8x8 and trying to do alot of epoch steps.
+the thinking behind it was maybe I am loosing details let try solve smaller problems. It didn't go as I have 
+plained.
+The second try was to enlarge the number of pictures in the batch so we get more patches to learn from.
+ it was also a fail.  The lest try was to enlarge the number of channels for more information about the same 
+ picture and stil taking a big amount of epoch steps so we won't go over the minimum point of the gradient. 
+ The parameter I have chosen are : 
+ patch size - 24x24, 
+ number of channels = 60, 
+ batch_size = 100, 
+ epoch_steps = 500, 
+ epochs = 7. 
