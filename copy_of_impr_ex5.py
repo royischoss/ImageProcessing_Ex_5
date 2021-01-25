@@ -89,7 +89,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from scipy.ndimage.filters import convolve
 import matplotlib.pyplot as plt
-from scipy.ndimage import zoom
+from scipy.ndimage import zoom, map_coordinates
 from skimage import color
 
 
@@ -240,7 +240,7 @@ def load_dataset(filenames, batch_size, corruption_func, crop_size):
     :return:outputs random tuples of the form (source_batch, target_batch), where each output variable is an array of shape(batch_size, height, width, 1).
      target_batch is made of clean images and source_batch is their respective randomly corrupted version
      according to corruption_func(im)
-    """   
+    """
     my_image_dictionary = dict()
     while True:
         source_batch = []
@@ -248,35 +248,37 @@ def load_dataset(filenames, batch_size, corruption_func, crop_size):
         for i in range(batch_size):
             random_index = np.random.randint(0, len(filenames))
             random_im_name = filenames[random_index]
-            random_patch_location = np.empty(2)
-            
+            random_patch_location = np.zeros(2).astype(np.int16)
+
             if random_im_name in my_image_dictionary:
                 source_im_clipped = my_image_dictionary[random_im_name]
             else:
                 source_im_clipped = read_image(random_im_name, 1)
                 my_image_dictionary[random_im_name] = source_im_clipped
-            
-                
-            random_patch_location[0] = np.random.randint(3 * crop_size[0], source_im_clipped.shape[0] - 3 * crop_size[0])
-            random_patch_location[1] = np.random.randint(3 * crop_size[1], source_im_clipped.shape[1] - 3 * crop_size[1])
 
-            patch_big = source_im_clipped[random_patch_location[0] - 3 * crop_size[0]:random_patch_location[0] + 
-                                3 * crop_size[0], random_patch_location[1] - 3 * crop_size[1],random_patch_location[1] + 3 * crop_size[1]]
+            big_crop = (crop_size[0] * 3, crop_size[1] * 3)
+            random_patch_location[0] = np.random.randint(0, source_im_clipped.shape[0] - big_crop[0])
+            random_patch_location[1] = np.random.randint(0, source_im_clipped.shape[1] - big_crop[1])
+
+            patch_big = source_im_clipped[random_patch_location[0]:(random_patch_location[0] + big_crop[0]),
+                                          random_patch_location[1]:(random_patch_location[1] + big_crop[1])]
             corrupted_im_patch_big = corruption_func(patch_big)
-            
-            random_patch_location[0] = np.random.randint(crop_size[0], patch_big[0] - crop_size[0])
-            random_patch_location[1] = np.random.randint(crop_size[1], patch_big[1] - crop_size[1])
 
-            patch = patch_big[random_patch_location[0] - crop_size[0]:random_patch_location[0] + 
-                                crop_size[0], random_patch_location[1] - crop_size[1],random_patch_location[1] + crop_size[1]] -= 0.5
-            corrupted_im_patch = corrupted_im_patch_big[random_patch_location[0] - crop_size[0]:random_patch_location[0] + 
-                                crop_size[0], random_patch_location[1] - crop_size[1],random_patch_location[1] + crop_size[1]] -= 0.5
-            
+            random_patch_location[0] = np.random.randint(0, patch_big.shape[0] - crop_size[0])
+            random_patch_location[1] = np.random.randint(0, patch_big.shape[1] - crop_size[1])
 
-            source_batch.append(corrupted_im_patch)
-            target_batch.append(patch)
+            patch = patch_big[random_patch_location[0]:(random_patch_location[0] + crop_size[0]),
+                              random_patch_location[1]:(random_patch_location[1] + crop_size[1])]
+            corrupted_im_patch = corrupted_im_patch_big[
+                                 random_patch_location[0]:(random_patch_location[0] + crop_size[0]),
+                                 random_patch_location[1]:(random_patch_location[1] + crop_size[1])]
 
-        yield (source_batch, target_batch)
+            patch = patch - 0.5
+            corrupted_im_patch =  corrupted_im_patch - 0.5
+
+            source_batch.append(corrupted_im_patch[..., np.newaxis])
+            target_batch.append(patch[..., np.newaxis])
+        yield np.array(source_batch), np.array(target_batch)
 
 """# 4 Neural Network Model"""
 
@@ -289,9 +291,9 @@ def resblock(input_tensor, num_channels):
     :return: symbolic output tensor of the resnet block
     """
     x = input_tensor
-    layer = Conv2D(num_channels, kernel_size=(3,3), padding='same')(x)
+    layer = Conv2D(num_channels, kernel_size=(3, 3), padding='same')(input_tensor)
     layer = Activation(activation='relu')(layer)
-    layer = Conv2D(num_channels,kernel_size=(3,3), padding='same')(first_layer)
+    layer = Conv2D(num_channels,kernel_size=(3, 3), padding='same')(layer)
     layer = Add()([x, layer])
     out = Activation(activation='relu')(layer)
     return out
@@ -307,14 +309,14 @@ def build_nn_model(height, width, num_channels, num_res_blocks):
     :param num_res_blocks: number of residual blocks
     :return: an untrained Keras model.
     """
-    input = Input(shape=(height, width, num_channels))
-    first_layer = Conv2D(Conv2D(num_channels, kernel_size=(3,3), padding='same', activation='relu')(input))
-    curr_tensor = first_layer
+    input = Input(shape=(height, width, 1))
+    first_layer = Conv2D(num_channels, kernel_size=(3, 3), padding='same')(input)
+    curr_tensor = Activation(activation='relu')(first_layer)
     for i in range(num_res_blocks):
-        curr_tensor = resblock(curr_tensor)
-    before_last_layer = Conv2D(Conv2D(1, kernel_size=(3,3), padding='same')(curr_tensor))
+        curr_tensor = resblock(curr_tensor, num_channels)
+    before_last_layer = Conv2D(1, kernel_size=(3, 3), padding='same')(curr_tensor)
     output = Add()([input, before_last_layer])
-    model = Model(inputs=input, output=output)
+    model = Model(input, output)
     return model
 
 """# 5 Training Networks for Image Restoration"""
@@ -331,12 +333,13 @@ def train_model(model, images, corruption_func, batch_size, steps_per_epoch, num
     :param num_epochs: the number of epochs for which the optimization will run.
     :param num_valid_samples: the number of samples in the validation set to test on after every epoch.
     """
-    training = images[len(images) // 1.25:len(images) - 1]
-    validation = images[0:(len(images) // 1.25) - 1]
-    train_data = load_dataset(training, batch_size, corruption_func, model.(input_shape)[1:3])
-    valid_data = load_dataset(validation, batch_size, corruption_func, model.(input_shape)[1:3])
-    model.compile(loss='mean_squared_error', optimizer='adam')
-    model.fit_generator(train_data, validation_data=valid_data, steps_per_epoch=num_valid_samples, epochs=num_epochs,validtion_steps=num_valid_samples//)
+    validation = images[int(len(images) // 1.25):len(images) - 1]
+    training = images[0:int(len(images) // 1.25) - 1]
+    train_data = load_dataset(training, batch_size, corruption_func, model.input_shape[1:3])
+    valid_data = load_dataset(validation, batch_size, corruption_func, model.input_shape[1:3])
+    model.compile(loss='mean_squared_error', optimizer=Adam(beta_2=0.9))
+    model.fit_generator(train_data, validation_data=valid_data, steps_per_epoch=steps_per_epoch
+                        , epochs=num_epochs, validation_steps=num_valid_samples/batch_size, use_multiprocessing=True)
 
 """# 6 Image Restoration of Complete Images"""
 
@@ -348,7 +351,15 @@ def restore_image(corrupted_image, base_model):
     :param base_model: a neural network trained to restore small patches. The input and output of the network are images with values in the [−0.5, 0.5] range.
     :return: the restored image
     """
-    pass
+    h, w = corrupted_image.shape
+    corrupted_image = corrupted_image.reshape(1, h, w, 1) - 0.5
+    new_input = Input(shape=(h, w, 1))
+    output = base_model(new_input)
+    new_model = Model(inputs=new_input, output=output)
+    restored_image = new_model.predict(corrupted_image, batch_size=1)
+    restored_image = restored_image + 0.5
+    np.clip(restored_image, 0, 1, out=restored_image)
+    return restored_image.reshape(h, w).astype(np.float64)
 
 """# 7 Application to Image Denoising and Deblurring
 ## 7.1 Image Denoising
@@ -363,7 +374,14 @@ def add_gaussian_noise(image, min_sigma, max_sigma):
     :param max_sigma: a non-negative scalar value larger than or equal to min_sigma, representing the maximal variance of the gaussian distribution
     :return: the corrupted image
     """
-    pass
+    sigma = np.random.uniform(min_sigma, max_sigma, (1,))[0]
+    normal = np.random.normal(0, sigma, image.shape)
+    returned_image = image + normal
+    returned_image = returned_image * 255
+    returned_image = np.round(returned_image)
+    returned_image = returned_image / 255
+    returned_image = np.clip(returned_image, 0, 1)
+    return returned_image
 
 #@markdown ### 7.1.2 Training a Denoising Mode
 
@@ -377,7 +395,13 @@ def learn_denoising_model(denoise_num_res_blocks, quick_mode=False):
     :param quick_mode: is quick mode
     :return: the trained model
     """
-    pass
+    images_list = images_for_denoising()
+    model = build_nn_model(24, 24, 48, denoise_num_res_blocks)
+    if quick_mode:
+        train_model(model, images_list, lambda x: add_gaussian_noise(x, 0, 0.2), 10, 3, 2, 30)
+    else:
+        train_model(model, images_list, lambda x: add_gaussian_noise(x, 0, 0.2), 100, 100, 10, 1000)
+    return model
 
 """## 7.2 Image Deblurring
 ### 7.2.1 Motion Blur
@@ -391,7 +415,13 @@ def add_motion_blur(image, kernel_size, angle):
     :param angle: an angle in radians in the range [0, π).
     :return: blurred image
     """
-    pass
+    kernel = motion_blur_kernel(kernel_size, angle)
+    blur_im = convolve(image, kernel)
+    blur_im = blur_im * 255
+    blur_im = np.round(blur_im)
+    blur_im = blur_im / 255
+    blur_im = np.clip(blur_im, 0, 1)
+    return blur_im
 
 def random_motion_blur(image, list_of_kernel_sizes):
     """
@@ -400,7 +430,11 @@ def random_motion_blur(image, list_of_kernel_sizes):
     :param list_of_kernel_sizes: a list of odd integers.
     :return: blurred image
     """
-    pass
+    angle = np.random.uniform(0, np.pi)
+    index = np.random.randint(0, len(list_of_kernel_sizes))
+    kernel_size = list_of_kernel_sizes[index]
+    blurred_im = add_motion_blur(image, kernel_size, angle)
+    return blurred_im
 
 #@markdown ### 7.2.2 Training a Deblurring Model
 
@@ -416,7 +450,13 @@ def learn_deblurring_model(deblur_num_res_blocks, quick_mode=False):
     :param quick_mode: is quick mode
     :return: the trained model
     """
-    pass
+    images_list = images_for_deblurring()
+    model = build_nn_model(16, 16, 32, deblur_num_res_blocks)
+    if quick_mode:
+        train_model(model, images_list, lambda x:random_motion_blur(x, [7]), 10, 3, 2, 30)
+    else:
+        train_model(model, images_list, lambda x:random_motion_blur(x, [7]), 100, 100, 10, 1000)
+    return model
 
 """##7.3 Image Super-resolution
 ### 7.3.1 Image Low-Resolution Corruption
@@ -432,7 +472,18 @@ def super_resolution_corruption(image):
     :param image: a grayscale image with values in the [0, 1] range of type float64.
     :return: corrupted image
     """
-    pass
+    height, width = image.shape[0], image.shape[1]
+    factor = np.random.randint(2, 5)
+    image_corrupt = image[:(width // factor) * factor,:(height // factor) * factor]
+    corrupt_im = zoom(image_corrupt, 1 / factor)
+    corrupt_im = zoom(corrupt_im, factor)
+    indices = np.indices(image.shape)
+    corrupt_im = map_coordinates(corrupt_im,indices, order=1, prefilter=False)
+    corrupt_im = corrupt_im * 255
+    corrupt_im = np.round(corrupt_im)
+    corrupt_im = corrupt_im / 255
+    corrupt_im = np.clip(corrupt_im, 0, 1)
+    return corrupt_im
 
 #@markdown ### 7.3.2 Training a Super Resolution Model
 
@@ -453,17 +504,23 @@ def learn_super_resolution_model(super_resolution_num_res_blocks, quick_mode=Fal
     :param quick_mode: is quick mode
     :return: the trained model
     """
-    pass
+    images_list = images_for_super_resolution()
+    model = build_nn_model(24, 24, 60, super_resolution_num_res_blocks)
+    if quick_mode:
+        train_model(model, images_list, super_resolution_corruption, 10, 3, 2, 30)
+    else:
+        train_model(model, images_list, super_resolution_corruption, 100, 500, 7, 1000)
+    return model
 
 #@markdown **Question 1:** Give a short description of your implementation and explain why do you think it works and why is it a good method for training the SR task.
-Answer1 = "" #@param {type:"string"}
+Answer1 = "The implemantation of the SR task I have chosen is corrupting using the scipy zoom function. using zoom first I downsized the image by a factor between 2-4 , and the second use is enlarging it with the same factor. this caused loosing resulution in grayscale between the original image pixels and the coruupted one. wich was our plan" #@param {type:"string"}
 with open(f'answer1.txt', 'w+') as fh:
     fh.write(Answer1)
 
 #@markdown **DON'T FORGET TO RUN THIS CELL AFTER YOU ANSWER IT!**
 
 #@markdown **Question 2:** Elaborate on the different parameters you've tried to use and how did changing them affect the training process, finally list the parameters you've chosen.
-Answer2 = "" #@param {type:"string"}
+Answer2 = "I had two tryouts before succes. the first was taking small patch 8x8 and trying to do alot of epoch steps. the thinking behind it was maybe I am loosing details let try solve smaller problems. It didn't go as I have plained.The second try was to enlarge the number of pictures in the batch so we get more patches to learn from. it was also a fail.  The lest try was to enlarge the number of channels for more information about the same picture and stil taking a big amount of epoch steps so we won't go over the minimum point of the gradient. The parameter I have chosen are : patch size - 24x24, number of channels = 60, batch_size = 100, epoch_steps = 500, epochs = 7. " #@param {type:"string"}
 with open(f'answer2.txt', 'w+') as fh:
     fh.write(Answer2)
 
@@ -479,10 +536,33 @@ You do not need to submit the function that generates these plots, you should ju
 **Note:** In your submission, the names of the plots should be `depth\_plot\_denoise.png` and  `depth\_plot\_deblur.png` and they should be located in the same directory as the rest of your files.
 """
 
+history = []
+for depth in range(1,6):
+    trained_model_deblur = learn_deblurring_model(depth, False)
+    # trainded_model_denoising = learn_denoising_model(depth, False)
+    # trained_model_SR = learn_super_resolution_model(depth,False)
 
+    # history.append(trained_model_SR.history.history['val_loss'])
+    # history.append(trainded_model_denoising.history.history['val_loss'])
+    history.append(trained_model_deblur.history.history['val_loss'])
+    
+
+x_axis = np.arange(len(history[0]))
+fig = plt.figure()
+for i in range(5):
+    plt.plot(x_axis, history[i], label= str(i+1) + " res blocks")
+plt.legend(loc="upper right")
+plt.grid()
+fig.suptitle('Deblur MSE / Epochs')
+# fig.suptitle('Denoise MSE / Epochs')
+# fig.suptitle('SR MSE / Epochs')
+plt.xlabel('epochs')
+plt.ylabel('MSE')
+plt.show()
+fig.savefig('denoise_plot_deblur.png')
 
 #@markdown **Question 3:** Describe the effect of increasing the residual blocks on its performance for each task, both quantitatively in terms of the plot you got and qualitatively in terms of the differences in the image outputs of each model.
-Answer3 = "" #@param {type:"string"}
+Answer3 = "As the graphs shows both denoising and deblurring lost value was effected by the depth of the network. we got a faster  convergence to the minimum and stayed lowe in the validation. while for the depth of one or two block we saw big lost value. it's shown on the photos too as we saw the small amount of blocks gave us bit more blury and noisie photo. " #@param {type:"string"}
 with open(f'answer3.txt', 'w+') as fh:
     fh.write(Answer3)
 
