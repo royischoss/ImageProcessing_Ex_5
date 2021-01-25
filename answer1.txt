@@ -1,0 +1,1 @@
+The implemantation of the SR task I have chosen is corrupting using the scipy zoom function. using zoom first I downsized the image by a factor between 2-4 , and the second use is enlarging it with the same factor. this caused loosing resulution in grayscale between the original image pixels and the coruupted one. wich was our plan
