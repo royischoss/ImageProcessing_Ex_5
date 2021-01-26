@@ -535,57 +535,7 @@ You do not need to submit the function that generates these plots, you should ju
 
 **Note:** In your submission, the names of the plots should be `depth\_plot\_denoise.png` and  `depth\_plot\_deblur.png` and they should be located in the same directory as the rest of your files.
 """
-
-<<<<<<< HEAD
-history = []
-for depth in range(1,6):
-    trained_model_deblur = learn_deblurring_model(depth, False)
-    # trainded_model_denoising = learn_denoising_model(depth, False)
-    # trained_model_SR = learn_super_resolution_model(depth,False)
-
-    # history.append(trained_model_SR.history.history['val_loss'])
-    # history.append(trainded_model_denoising.history.history['val_loss'])
-    history.append(trained_model_deblur.history.history['val_loss'])
-    
-
-x_axis = np.arange(len(history[0]))
-fig = plt.figure()
-for i in range(5):
-    plt.plot(x_axis, history[i], label= str(i+1) + " res blocks")
-plt.legend(loc="upper right")
-plt.grid()
-fig.suptitle('Deblur MSE / Epochs')
-# fig.suptitle('Denoise MSE / Epochs')
-# fig.suptitle('SR MSE / Epochs')
-plt.xlabel('epochs')
-plt.ylabel('MSE')
-plt.show()
-=======
-history = []
-for depth in range(1,6):
-    trained_model_deblur = learn_deblurring_model(depth, False)
-    # trainded_model_denoising = learn_denoising_model(depth, False)
-    # trained_model_SR = learn_super_resolution_model(depth,False)
-
-    # history.append(trained_model_SR.history.history['val_loss'])
-    # history.append(trainded_model_denoising.history.history['val_loss'])
-    history.append(trained_model_deblur.history.history['val_loss'])
-    
-
-x_axis = np.arange(len(history[0]))
-fig = plt.figure()
-for i in range(5):
-    plt.plot(x_axis, history[i], label= str(i+1) + " res blocks")
-plt.legend(loc="upper right")
-plt.grid()
-fig.suptitle('Deblur MSE / Epochs')
-# fig.suptitle('Denoise MSE / Epochs')
-# fig.suptitle('SR MSE / Epochs')
-plt.xlabel('epochs')
-plt.ylabel('MSE')
-plt.show()
->>>>>>> 53cbda8faffbe1a51c638c34d2058bcf42782ff9
-fig.savefig('denoise_plot_deblur.png')
+pass
 
 #@markdown **Question 3:** Describe the effect of increasing the residual blocks on its performance for each task, both quantitatively in terms of the plot you got and qualitatively in terms of the differences in the image outputs of each model.
 Answer3 = "As the graphs shows both denoising and deblurring lost value was effected by the depth of the network. we got a faster  convergence to the minimum and stayed lowe in the validation. while for the depth of one or two block we saw big lost value. it's shown on the photos too as we saw the small amount of blocks gave us bit more blury and noisie photo. " #@param {type:"string"}
