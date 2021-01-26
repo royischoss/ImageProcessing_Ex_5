@@ -333,8 +333,7 @@ def train_model(model, images, corruption_func, batch_size, steps_per_epoch, num
     :param num_epochs: the number of epochs for which the optimization will run.
     :param num_valid_samples: the number of samples in the validation set to test on after every epoch.
     """
-    validation = images[int(len(images) // 1.25):len(images) - 1]
-    training = images[0:int(len(images) // 1.25) - 1]
+    training, validation = train_test_split(images, test_size=0.2)
     train_data = load_dataset(training, batch_size, corruption_func, model.input_shape[1:3])
     valid_data = load_dataset(validation, batch_size, corruption_func, model.input_shape[1:3])
     model.compile(loss='mean_squared_error', optimizer=Adam(beta_2=0.9))
@@ -355,7 +354,7 @@ def restore_image(corrupted_image, base_model):
     corrupted_image = corrupted_image.reshape(1, h, w, 1) - 0.5
     new_input = Input(shape=(h, w, 1))
     output = base_model(new_input)
-    new_model = Model(inputs=new_input, output=output)
+    new_model = Model(new_input, output)
     restored_image = new_model.predict(corrupted_image, batch_size=1)
     restored_image = restored_image + 0.5
     np.clip(restored_image, 0, 1, out=restored_image)
@@ -474,7 +473,7 @@ def super_resolution_corruption(image):
     """
     height, width = image.shape[0], image.shape[1]
     factor = np.random.randint(2, 5)
-    image_corrupt = image[:(width // factor) * factor,:(height // factor) * factor]
+    image_corrupt = image[:(height // factor) * factor,:(width // factor) * factor]
     corrupt_im = zoom(image_corrupt, 1 / factor)
     corrupt_im = zoom(corrupt_im, factor)
     indices = np.indices(image.shape)
