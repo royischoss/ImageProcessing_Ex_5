@@ -474,7 +474,7 @@ def super_resolution_corruption(image):
     """
     height, width = image.shape[0], image.shape[1]
     factor = np.random.randint(2, 5)
-    image_corrupt = image[:(width // factor) * factor,:(height // factor) * factor]
+    image_corrupt = image[:(height // factor) * factor,:(width // factor) * factor]
     corrupt_im = zoom(image_corrupt, 1 / factor)
     corrupt_im = zoom(corrupt_im, factor)
     indices = np.indices(image.shape)
