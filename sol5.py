@@ -355,7 +355,7 @@ def restore_image(corrupted_image, base_model):
     corrupted_image = corrupted_image.reshape(1, h, w, 1) - 0.5
     new_input = Input(shape=(h, w, 1))
     output = base_model(new_input)
-    new_model = Model(inputs=new_input, output=output)
+    new_model = Model(new_input, output)
     restored_image = new_model.predict(corrupted_image, batch_size=1)
     restored_image = restored_image + 0.5
     np.clip(restored_image, 0, 1, out=restored_image)
