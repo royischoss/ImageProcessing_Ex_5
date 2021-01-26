@@ -1,4 +1,6 @@
 As the graphs shows both denoising and deblurring lost value was effected by the depth of the network.
 we got a faster  convergence to the minimum and stayed low in the validation for bigger depth.
 while for the depth of one or two block we saw a bigger lost value.
-it's shown on the photos too as we saw the small amount of blocks gave us bit more blury and noisie photo. 
+It's shown on the photos too as we saw the small amount of blocks gave us bit more blury and noisie photo.
+This facts goes with the fact that the deeper network we get the better we can describe a complex function and 
+this way we can get closer to the function who describes the way to reconstruct the image.
